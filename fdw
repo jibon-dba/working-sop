@@ -1,0 +1,104 @@
+# SELECT extname FROM pg_extension;
+
+# CREATE EXTENSION IF NOT EXISTS postgres_fdw;
+
+# CREATE SERVER lenden_ekyc_server
+FOREIGN DATA WRAPPER postgres_fdw
+OPTIONS (
+    host '172.23.4.20',
+    port '9999',
+    dbname 'db_kyc_prod'
+);
+
+# CREATE USER MAPPING FOR dba_shariar_2025020
+SERVER lenden_ekyc_server
+OPTIONS (
+    user 'bi_superset',
+    password 'FFFgF?gK%W?ubb'
+);
+
+# Optional: 
+CREATE USER MAPPING FOR dba_jibon_2026056
+SERVER lenden_ekyc_server
+OPTIONS (
+    user 'bi_superset',
+    password 'FFFgF?gK%W?ubb'
+);
+CREATE USER MAPPING FOR bi_superset
+SERVER lenden_ekyc_server
+OPTIONS (
+    user 'bi_superset',
+    password 'FFFgF?gK%W?ubb'
+);
+
+
+
+# IMPORT FOREIGN SCHEMA dot_kyc
+LIMIT TO (kyc_records,users_ec_data)
+FROM SERVER lenden_ekyc_server
+INTO analytics;
+
+
+# select * from analytics.report_view_db_kyc_prod_ec_information
+
+# create or replace view analytics.report_view_db_kyc_prod_ec_information as 
+WITH users_ec_data AS (
+    SELECT
+        id,
+        created_date,
+        process_id,
+        smart_nid,
+        original_nid,
+        name_eng,
+        image_base64data,
+        -- Superset HTML image render column
+        CONCAT(
+            '&lt;img src="data:image/jpeg;base64,',
+            image_base64data,
+            '" width="120"/&gt;'
+        ) AS user_ec_image
+    FROM analytics.users_ec_data
+),
+kyc_records AS (
+    SELECT
+        id,
+        created_date,
+        process_id,
+        customer_id,
+        kyc_status,
+        ec_process_status,
+        validation_process_status,
+        applicant_photo_ec_match_score,
+        nid_front_image,
+        nid_back_image,
+        ROW_NUMBER() OVER (
+            PARTITION BY customer_id
+            ORDER BY created_date DESC
+        ) AS rank_no
+    FROM analytics.kyc_records
+)
+SELECT
+    kr.id,
+    kr.created_date,
+    kr.process_id,
+    kr.customer_id,
+    kr.kyc_status,
+    kr.ec_process_status,
+    kr.validation_process_status,
+    kr.applicant_photo_ec_match_score,
+    kr.nid_front_image,
+    kr.nid_back_image,
+    kr.rank_no,
+    ued.id AS users_ec_data_id,
+    ued.created_date AS users_ec_data_created_date,
+    ued.process_id AS users_ec_data_process_id,
+    ued.smart_nid AS users_ec_data_smart_nid,
+    ued.original_nid AS users_ec_data_original_nid,
+    ued.name_eng AS users_ec_data_name_eng,
+    ued.image_base64data AS users_ec_data_image_base64data,
+    ued.user_ec_image
+FROM kyc_records kr
+LEFT JOIN users_ec_data ued
+    ON kr.process_id = ued.process_id
+-- WHERE kr.customer_id = ''
+-- ORDER BY kr.customer_id, kr.rank_no;
